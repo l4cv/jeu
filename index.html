@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base href="https://jeuleger3d.com/">
+    <title>JeuLéger3D - Environnement Réaliste avec Contrôle de Musique</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        #gameCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        #interface {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 18px;
+            text-shadow: 1px 1px 2px black;
+        }
+        #menu {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            color: white;
+            width: 300px;
+        }
+        #menu button {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            background: #545454;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        #menu button:hover {
+            background: #5b5b5b;
+        }
+        #options {
+            display: none;
+        }
+        #options input[type="text"], #options input[type="range"] {
+            margin: 5px;
+            padding: 5px;
+            width: 200px;
+        }
+        #options label {
+            display: block;
+            margin-top: 10px;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="interface">FPS: <span id="fps">0</span> | Vitesse: <span id="speed">Normal</span></div>
+    <div id="menu">
+        <h2>Menu</h2>
+        <button id="resumeBtn">Reprendre</button>
+        <button id="optionsBtn">Options</button>
+        <button id="fullscreenBtn">Plein Écran</button>
+        <button id="quitBtn">Quitter</button>
+        <div id="options">
+            <h3>Options</h3>
+            <label>Avancer: <input type="text" id="forwardKey" value="z"></label>
+            <label>Reculer: <input type="text" id="backwardKey" value="s"></label>
+            <label>Gauche: <input type="text" id="leftKey" value="q"></label>
+            <label>Droite: <input type="text" id="rightKey" value="d"></label>
+            <label>Sensibilité souris: <input type="range" id="mouseSensitivity" min="1" max="10" value="5"></label>
+            <label>Volume de la musique: <input type="range" id="musicVolume" min="0" max="100" value="50"></label>
+            <button id="saveOptionsBtn">Sauvegarder</button>
+        </div>
+    </div>
+    <audio id="background-music" src="c:\Users\acer\Downloads\(Free) Horror Ambiance - Ominous Background Music.mp3" preload="auto" loop></audio>
+    <script>
+        let scene, camera, renderer, player, character;
+        let isGameRunning = true;
+        let normalMoveSpeed = 0.1;
+        let sprintMoveSpeed = 0.3;
+        let currentMoveSpeed = normalMoveSpeed;
+        let isSprinting = false;
+        let mouseSensitivity = 0.002;
+        let controls = { forward: 'z', backward: 's', left: 'q', right: 'd' };
+        const trees = [];
+        const clouds = [];
+        let lastTime = 0;
+        let frameCount = 0;
+        let moveForward = false;
+        let moveBackward = false;
+        let moveLeft = false;
+        let moveRight = false;
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0xcccccc, 0.002);
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('gameCanvas'), antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+            player = new THREE.Group();
+            scene.add(player);
+            character = createCharacter();
+            player.add(character);
+            camera.position.set(0, 2, -5);
+            player.add(camera);
+            player.position.y = 1;
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(100, 100, 100);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            directionalLight.shadow.camera.near = 1;
+            directionalLight.shadow.camera.far = 500;
+            directionalLight.shadow.camera.left = -100;
+            directionalLight.shadow.camera.right = 100;
+            directionalLight.shadow.camera.top = 100;
+            directionalLight.shadow.camera.bottom = -100;
+            scene.add(directionalLight);
+
+            createGround();
+            createRoad();
+            createTrees(100);
+            createClouds(20);
+            createSky();
+            startMusic(0);
+        }
+
+        function startMusic() {
+            const music = document.getElementById('background-music');
+            if (music.paused) {
+                music.play().catch(error => {
+                    console.log("La lecture automatique est bloquée : " + error);
+                });
+            }
+        }
+
+        document.getElementById('gameCanvas').addEventListener('click', function () {
+            document.getElementById('gameCanvas').requestPointerLock();
+            startMusic();
+        });
+
+        function createCharacter() {
+            const geometry = new THREE.BoxGeometry(0.5, 1, 0.5);
+            const material = new THREE.MeshStandardMaterial({ color: 0xff0000, roughness: 0.7, metalness: 0.3 });
+            const cube = new THREE.Mesh(geometry, material);
+            cube.position.y = 0.5;
+            cube.castShadow = true;
+            return cube;
+        }
+
+        function createGround() {
+            const loader = new THREE.TextureLoader();
+            const grassTexture = loader.load('https://threejsfundamentals.org/threejs/resources/images/grass.jpg');
+            grassTexture.wrapS = THREE.RepeatWrapping;
+            grassTexture.wrapT = THREE.RepeatWrapping;
+            grassTexture.repeat.set(1000, 1000);
+
+            const groundGeometry = new THREE.PlaneGeometry(1000, 1000);
+            const groundMaterial = new THREE.MeshStandardMaterial({ map: grassTexture, roughness: 0.8, metalness: 0.2 });
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.position.y = -0.01;
+            ground.receiveShadow = true;
+            scene.add(ground);
+        }
+
+        function createRoad() {
+            const roadGeometry = new THREE.PlaneGeometry(10, 1000);
+            const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8, metalness: 0.2 });
+            const road = new THREE.Mesh(roadGeometry, roadMaterial);
+            road.rotation.x = -Math.PI / 2;
+            road.position.y = 0.01;
+            road.receiveShadow = true;
+            scene.add(road);
+
+            const lineGeometry = new THREE.PlaneGeometry(0.2, 1000);
+            const lineMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const line = new THREE.Mesh(lineGeometry, lineMaterial);
+            line.rotation.x = -Math.PI / 2;
+            line.position.y = 0.02;
+            line.receiveShadow = true;
+            scene.add(line);
+        }
+
+        function createTrees(count) {
+            const loader = new THREE.TextureLoader();
+            const barkTexture = loader.load('https://threejsfundamentals.org/threejs/resources/images/bark.jpg');
+            const leafTexture = loader.load('https://threejsfundamentals.org/threejs/resources/images/leaf.jpg');
+
+            const treeGeometry = new THREE.ConeGeometry(2, 8, 8);
+            const treeMaterial = new THREE.MeshStandardMaterial({ map: leafTexture, roughness: 0.8, metalness: 0.2 });
+
+            const trunkGeometry = new THREE.CylinderGeometry(0.5, 0.5, 4);
+            const trunkMaterial = new THREE.MeshStandardMaterial({ map: barkTexture, roughness: 0.9, metalness: 0.1 });
+
+            for (let i = 0; i < count; i++) {
+                const treeGroup = new THREE.Group();
+                const treeCone = new THREE.Mesh(treeGeometry, treeMaterial);
+                treeCone.position.y = 6;
+                treeCone.castShadow = true;
+
+                const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+                trunk.position.y = 2;
+                trunk.castShadow = true;
+
+                treeGroup.add(treeCone);
+                treeGroup.add(trunk);
+
+                const x = Math.random() * 800 - 400;
+                const z = Math.random() * 800 - 400;
+                if (Math.abs(x) > 15 || Math.abs(z) > 505) {
+                    treeGroup.position.set(x, 0, z);
+                    treeGroup.updateMatrix();
+                    treeGroup.matrixAutoUpdate = false;
+                    scene.add(treeGroup);
+                    trees.push(treeGroup);
+                }
+            }
+        }
+
+        function createClouds(count) {
+            const cloudGeometry = new THREE.SphereGeometry(10, 16, 16);
+            const cloudMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, roughness: 1, metalness: 0 });
+
+            for (let i = 0; i < count; i++) {
+                const cloud = new THREE.Group();
+                const cloudParts = Math.floor(Math.random() * 5) + 5;
+                for (let j = 0; j < cloudParts; j++) {
+                    const cloudPart = new THREE.Mesh(cloudGeometry, cloudMaterial);
+                    cloudPart.position.set(Math.random() * 20 - 10, Math.random() * 10, Math.random() * 20 - 10);
+                    cloudPart.scale.set(0.8 + Math.random() * 0.4, 0.8 + Math.random() * 0.4, 0.8 + Math.random() * 0.4);
+                    cloud.add(cloudPart);
+                }
+                cloud.position.set(Math.random() * 1000 - 500, 100 + Math.random() * 50, Math.random() * 1000 - 500);
+                cloud.castShadow = true;
+                scene.add(cloud);
+                clouds.push(cloud);
+            }
+        }
+
+        function createSky() {
+            const loader = new THREE.TextureLoader();
+            const texture = loader.load('https://threejsfundamentals.org/threejs/resources/images/sky.jpg', () => {
+                const rt = new THREE.WebGLCubeRenderTarget(texture.image.height);
+                rt.fromEquirectangularTexture(renderer, texture);
+                scene.background = rt.texture;
+            });
+        }
+
+        function animate(time) {
+            requestAnimationFrame(animate);
+            if (!isGameRunning) return;
+
+            frameCount++;
+            if (time - lastTime >= 1000) {
+                document.getElementById('fps').textContent = frameCount;
+                frameCount = 0;
+                lastTime = time;
+            }
+
+            animateClouds();
+            movePlayer();
+            renderer.render(scene, camera);
+        }
+
+        function animateClouds() {
+            clouds.forEach(cloud => {
+                cloud.position.x += 0.05;
+                if (cloud.position.x > 500) cloud.position.x = -500;
+            });
+        }
+
+        function movePlayer() {
+            const playerDirection = new THREE.Vector3();
+            camera.getWorldDirection(playerDirection);
+            playerDirection.y = 0;
+            playerDirection.normalize();
+            const sideDirection = new THREE.Vector3(-playerDirection.z, 0, playerDirection.x);
+            let movement = new THREE.Vector3();
+            if (moveForward) movement.add(playerDirection);
+            if (moveBackward) movement.sub(playerDirection);
+            if (moveLeft) movement.sub(sideDirection);
+            if (moveRight) movement.add(sideDirection);
+            if (movement.length() > 0) {
+                movement.normalize();
+                movement.multiplyScalar(currentMoveSpeed);
+                if (!checkCollision(movement)) {
+                    player.position.add(movement);
+                }
+            }
+            if (moveForward || moveBackward || moveLeft || moveRight) {
+                document.getElementById('speed').textContent = isSprinting ? 'Sprint' : 'Normal';
+            } else {
+                document.getElementById('speed').textContent = 'Arrêté';
+            }
+        }
+
+        function checkCollision(movement) {
+            const playerBox = new THREE.Box3().setFromObject(character);
+            playerBox.min.add(player.position);
+            playerBox.max.add(player.position);
+            const nextPosition = player.position.clone().add(movement);
+            playerBox.min.add(movement);
+            playerBox.max.add(movement);
+
+            for (let tree of trees) {
+                const treeBox = new THREE.Box3().setFromObject(tree);
+                if (playerBox.intersectsBox(treeBox)) {
+                    const treeCenter = new THREE.Vector3();
+                    treeBox.getCenter(treeCenter);
+                    const playerCenter = new THREE.Vector3();
+                    playerBox.getCenter(playerCenter);
+                    const direction = new THREE.Vector3().subVectors(playerCenter, treeCenter).normalize();
+                    const pushBack = direction.multiplyScalar(0.1);
+                    nextPosition.add(pushBack);
+                    playerBox.min.add(pushBack);
+                    playerBox.max.add(pushBack);
+                }
+            }
+            player.position.copy(nextPosition);
+            return false;
+        }
+
+        document.addEventListener('keydown', function (e) {
+            if (!isGameRunning) return;
+            const key = e.key.toLowerCase();
+            if (key === controls.forward) moveForward = true;
+            else if (key === controls.backward) moveBackward = true;
+            else if (key === controls.left) moveLeft = true;
+            else if (key === controls.right) moveRight = true;
+            else if (key === 'escape' || key === 'tab') {
+                e.preventDefault();
+                toggleMenu();
+            } else if (key === 'shift') {
+                isSprinting = true;
+                currentMoveSpeed = sprintMoveSpeed;
+            }
+        });
+
+        document.addEventListener('keyup', function (e) {
+            const key = e.key.toLowerCase();
+            if (key === controls.forward) moveForward = false;
+            else if (key === controls.backward) moveBackward = false;
+            else if (key === controls.left) moveLeft = false;
+            else if (key === controls.right) moveRight = false;
+            else if (key === 'shift') {
+                isSprinting = false;
+                currentMoveSpeed = normalMoveSpeed;
+            }
+        });
+
+        document.addEventListener('mousemove', function (e) {
+            if (!isGameRunning) return;
+            const movementX = e.movementX || e.mozMovementX || e.webkitMovementX || 0;
+            const movementY = e.movementY || e.mozMovementY || e.webkitMovementY || 0;
+            player.rotation.y -= movementX * mouseSensitivity;
+            camera.rotation.x -= movementY * mouseSensitivity;
+            camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x));
+        });
+
+        function toggleMenu() {
+            const menu = document.getElementById('menu');
+            if (menu.style.display === 'none') {
+                menu.style.display = 'block';
+                isGameRunning = false;
+                document.exitPointerLock();
+            } else {
+                menu.style.display = 'none';
+                isGameRunning = true;
+                document.getElementById('gameCanvas').requestPointerLock();
+            }
+        }
+
+        document.getElementById('resumeBtn').addEventListener('click', function () {
+            toggleMenu();
+        });
+
+        document.getElementById('optionsBtn').addEventListener('click', function () {
+            document.getElementById('options').style.display = 'block';
+        });
+
+        document.getElementById('fullscreenBtn').addEventListener('click', toggleFullScreen);
+
+        document.getElementById('quitBtn').addEventListener('click', function () {
+            window.location.reload();
+        });
+
+        document.getElementById('saveOptionsBtn').addEventListener('click', function () {
+            controls.forward = document.getElementById('forwardKey').value.toLowerCase();
+            controls.backward = document.getElementById('backwardKey').value.toLowerCase();
+            controls.left = document.getElementById('leftKey').value.toLowerCase();
+            controls.right = document.getElementById('rightKey').value.toLowerCase();
+            mouseSensitivity = document.getElementById('mouseSensitivity').value * 0.0004;
+            const musicVolume = document.getElementById('musicVolume').value / 100;
+            document.getElementById('background-music').volume = musicVolume;
+            document.getElementById('options').style.display = 'none';
+        });
+
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        }
+
+        window.addEventListener('resize', function () {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        init();
+        animate(0);
+    </script>
+</body>
+</html>
